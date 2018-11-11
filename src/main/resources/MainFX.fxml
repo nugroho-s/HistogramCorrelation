@@ -5,12 +5,25 @@
 <?import javafx.scene.image.ImageView?>
 <?import javafx.scene.layout.AnchorPane?>
 
-<AnchorPane prefHeight="400.0" prefWidth="600.0" xmlns="http://javafx.com/javafx/8.0.121" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.nugsky.tugasakhir.controller.MainController">
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.control.Slider?>
+<AnchorPane prefHeight="480.0" prefWidth="854.0" xmlns="http://javafx.com/javafx/8.0.121" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.nugsky.tugasakhir.controller.MainController">
    <children>
-      <ImageView fx:id="videoThumbnail" fitHeight="150.0" fitWidth="200.0" layoutX="386.0" layoutY="50.0" pickOnBounds="true" preserveRatio="true" />
-      <TextField layoutX="14.0" layoutY="50.0" />
-      <Button layoutX="238.0" layoutY="50.0" mnemonicParsing="false" onAction="#chooseFile" text="Pilih File" />
-      <Button layoutX="238.0" layoutY="89.0" mnemonicParsing="false" text="Proses" />
-      <ImageView fx:id="pixelBeltViewer" fitHeight="150.0" fitWidth="200.0" layoutX="14.0" layoutY="200.0" pickOnBounds="true" preserveRatio="true" />
+      <HBox layoutY="10.0" layoutX="10" spacing="2">
+         <TextField fx:id="fileTextField" layoutX="15.0" layoutY="50.0" prefWidth="250.0"/>
+         <Button layoutX="265.0" layoutY="50.0" mnemonicParsing="false" onAction="#chooseFile" text="Pilih File" />
+         <Button fx:id="prosesBtn" layoutX="265.0" layoutY="90.0" mnemonicParsing="false" text="Proses" disable="true" onAction="#proses"/>
+      </HBox>
+      <VBox layoutY="60.0" layoutX="10" spacing="10">
+         <HBox spacing="10">
+            <ImageView fx:id="videoThumbnail" fitWidth="400" fitHeight="300" pickOnBounds="true" preserveRatio="true" />
+            <ImageView fx:id="pixelBeltViewer" fitWidth="400" fitHeight="300" pickOnBounds="true" preserveRatio="true" />
+         </HBox>
+         <HBox spacing="10">
+            <Slider prefWidth="724" fx:id="frameNoSlider" showTickLabels="true" showTickMarks="true" disable="true"></Slider>
+            <TextField prefWidth="100" fx:id="frameNoTextField" disable="true"></TextField>
+         </HBox>
+      </VBox>
    </children>
 </AnchorPane>
