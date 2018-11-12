@@ -108,6 +108,7 @@ public class MainController {
                     continue;
                 }
                 Collections.sort(contours,(Comparator.comparingInt(o -> (int) Imgproc.contourArea(o))));
+                Collections.reverse(contours);
                 int beltCount = 0,i=0;
 
                 TemporalPixelBelt pixelBelt = new TemporalPixelBelt(frameNo);
