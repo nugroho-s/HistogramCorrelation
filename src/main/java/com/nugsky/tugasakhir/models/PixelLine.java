@@ -8,4 +8,12 @@ public class PixelLine {
         this.isHorizontal = isHorizontal;
         this.location = location;
     }
+
+    @Override
+    public String toString() {
+        return "PixelLine{" +
+                "isHorizontal=" + isHorizontal +
+                ", location=" + location +
+                '}';
+    }
 }

@@ -23,6 +23,8 @@ import org.opencv.videoio.Videoio;
 
 import java.io.File;
 import java.util.*;
+import java.util.stream.Collector;
+import java.util.stream.Collectors;
 
 public class MainController {
     static{
@@ -38,7 +40,9 @@ public class MainController {
     private static List<TemporalPixelBeltGroup> temporalPixelBeltGroupList = new ArrayList<>();
     private static List<ForegroundObject> foregroundObjects = new ArrayList<>();
     private static String fileName = "";
+    private static Map<Integer, TemporalPixelBelt> temporalPixelBeltMap = new HashMap<>();
     private static List<TemporalPixelBelt> temporalPixelBelts = new ArrayList<>();
+    private int thresW=50,thresH=50;
 
     public ImageView videoThumbnail;
     public ImageView pixelBeltViewer;
@@ -67,6 +71,7 @@ public class MainController {
 
     public void proses(ActionEvent event) {
         logger.debug("proses");
+        temporalPixelBeltMap.clear();
         VideoCapture videoCap = new VideoCapture(fileName);
         VideoCapture maskCap = new VideoCapture("data/temp.mp4");
         Platform.runLater(() -> {
@@ -93,6 +98,13 @@ public class MainController {
             int frameNo=0;
             int frameMax = (int) videoCap.get(Videoio.CAP_PROP_FRAME_COUNT);
             int percent = 0;
+            TemporalPixelBelt pixelBelt = new TemporalPixelBelt();
+
+            //skip frame 1 and place pixel belt
+            videoCap.read(new Mat());
+            maskCap.read(new Mat());
+            frameNo++;
+            boolean first=true;
             while(videoCap.read(frame)){
                 if(100*((double)frameNo/(double)frameMax)>percent){
                     percent = (int) (100*((double)frameNo/(double)frameMax));
@@ -102,57 +114,118 @@ public class MainController {
                 Imgproc.cvtColor(frameFg,maskFg,Imgproc.COLOR_RGB2GRAY);
                 List<MatOfPoint> contours = new ArrayList<>();
                 Imgproc.findContours(maskFg,contours,new Mat(),Imgproc.RETR_LIST,Imgproc.CHAIN_APPROX_SIMPLE);
-                logger.debug(contours.size());
                 if(contours.isEmpty()) {
+                    logger.debug("Empty "+frameNo);
                     frameNo++;
                     continue;
                 }
-                Collections.sort(contours,(Comparator.comparingInt(o -> (int) Imgproc.contourArea(o))));
-                Collections.reverse(contours);
+                contours = Utils.filterContours(contours,maskFg.height()/thresH,maskFg.width()/thresW);
                 int beltCount = 0,i=0;
 
-                TemporalPixelBelt pixelBelt = new TemporalPixelBelt(frameNo);
+//                if (frameNo==30){
+//                    for(PixelLine line:pixelBelt.pixelLines){
+//                        if(line.isHorizontal)Imgproc.line(frame,new Point(0,line.location),new Point(maskFg.width(),line.location),new Scalar(255,255,255));
+//                        else Imgproc.line(frame,new Point(line.location,0),new Point(line.location,maskFg.height()),new Scalar(255,255,255));
+//                    }
+//                    Utils.displayImage(frame);
+//                }
+
+                if(Utils.isValidPixelBelt(pixelBelt,contours)){
+                    frameNo++;
+                    continue;
+                }
+                pixelBelt.frameEnd = frameNo-1;
+
+                int totArea=0;
+                List<Integer> areaList = contours.stream().map(s->(int)Imgproc.contourArea(s)).collect(Collectors.toList());
+                for(MatOfPoint contour:contours){
+                    totArea+=Imgproc.contourArea(contour);
+                }
+                pixelBelt = new TemporalPixelBelt();
                 //horizontal pixel belts
                 while (beltCount<4){
-                    Rect rect = Imgproc.boundingRect(contours.get(i));
+                    i=0;
+                    int randIn = rand.nextInt(totArea);
+                    int accArea=0;
+                    while(accArea<=randIn){
+                        accArea += areaList.get(i);
+                        i++;
+                    }
+                    Rect rect = Imgproc.boundingRect(contours.get(--i));
                     PixelLine line = new PixelLine(true,rand.nextInt(rect.height)+rect.y);
                     pixelBelt.addLines(line);
                     if(++i>=contours.size()) i=0;
                     beltCount++;
-                    if(frameNo==30){
-                        Imgproc.rectangle(maskFg,new Point(rect.x,rect.y),new Point(rect.x+rect.width,rect.y+rect.height),
-                                new Scalar(255,255,255));
-                        Imgproc.line(maskFg,new Point(0,line.location),new Point(maskFg.width(),line.location),new Scalar(255,255,255));
-                        Utils.displayImage(maskFg);
-                    }
                 }
-                if(frameNo==30) return;
+//                if(frameNo==0) return;
+
                 //vertical pixel belts
                 beltCount=0;
                 while (beltCount<4){
-                    Rect rect = Imgproc.boundingRect(contours.get(i));
+                    i=0;
+                    int randIn = rand.nextInt(totArea);
+                    int accArea=0;
+                    while(accArea<=randIn){
+                        accArea += areaList.get(i);
+                        i++;
+                    }
+                    Rect rect = Imgproc.boundingRect(contours.get(--i));
                     PixelLine line = new PixelLine(false,rand.nextInt(rect.width)+rect.x);
                     pixelBelt.addLines(line);
                     if(++i>=contours.size()) i=0;
                     beltCount++;
                 }
-                temporalPixelBelts.add(pixelBelt);
+//                if (frameNo==30){
+//                    for(PixelLine line:pixelBelt.pixelLines){
+//                        if(line.isHorizontal)Imgproc.line(frame,new Point(0,line.location),new Point(maskFg.width(),line.location),new Scalar(255,255,255));
+//                        else Imgproc.line(frame,new Point(line.location,0),new Point(line.location,maskFg.height()),new Scalar(255,255,255));
+//                    }
+//                    Utils.displayImage(frame);
+//                }
+                pixelBelt.frameStart = (temporalPixelBeltMap.isEmpty())?0:frameNo;
+                temporalPixelBeltMap.put(pixelBelt.frameStart,pixelBelt);
                 frameNo++;
             }
+            pixelBelt.frameEnd = frameMax;
             logger.debug("pixel belts done");
+            logger.debug(temporalPixelBeltMap);
 
             int i = 30;
             maskCap.set(Videoio.CAP_PROP_POS_FRAMES,i);
             Mat mask = new Mat();
             maskCap.read(mask);
-            TemporalPixelBelt tpb = temporalPixelBelts.get(i);
+            Imgproc.cvtColor(mask,mask,Imgproc.COLOR_RGB2GRAY);
+            List<MatOfPoint> contours = new ArrayList<>();
+            Imgproc.findContours(mask,contours,new Mat(),Imgproc.RETR_LIST,Imgproc.CHAIN_APPROX_SIMPLE);
+            contours = Utils.filterContours(contours,mask.height()/thresH,maskFg.width()/thresW);
+
+            TemporalPixelBelt tpb = null;
+
+            int pbi = i;
+            while(!temporalPixelBeltMap.containsKey(pbi)){
+                pbi--;
+            }
+            tpb=temporalPixelBeltMap.get(pbi);
+            logger.debug(tpb);
+            logger.debug(Utils.isValidPixelBelt(tpb,contours));
+
+            for(MatOfPoint contour:contours){
+                Rect rect = Imgproc.boundingRect(contour);
+                Imgproc.rectangle(mask,new Point(rect.x,rect.y),new Point(rect.x+rect.width,rect.y+rect.height),
+                        new Scalar(255,255,255),3);
+            }
+
             for(PixelLine pl:tpb.pixelLines){
                 if(pl.isHorizontal){
                     Imgproc.line(mask,new Point(0,pl.location),new Point(mask.width(),pl.location),new Scalar(255,255,255));
-                    logger.debug(String.format("line %d",pl.location));
+                } else {
+                    Imgproc.line(mask,new Point(pl.location,0),new Point(pl.location,mask.height()),new Scalar(255,255,255));
                 }
             }
             pixelBeltViewer.setImage(Utils.mat2Image(mask));
+            VideoCapture cap4frame = new VideoCapture(fileName);
+            cap4frame.set(Videoio.CAP_PROP_POS_FRAMES,4);
+            Utils.calculateCorrelation(temporalPixelBeltMap, new VideoCapture(fileName),cap4frame);
         }
     }
 
