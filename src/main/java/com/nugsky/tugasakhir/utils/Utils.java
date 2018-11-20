@@ -89,6 +89,7 @@ public class Utils {
         float threshold = 0;
         float recHeightThreshold = 0;
         float recWidthThreshold = 0;
+        Mat fgMask=new Mat();
         while (capture.read(camImage)) {
             if (firstRun){
                 firstRun = false;
@@ -98,11 +99,7 @@ public class Utils {
                 logger.debug(String.format("threshold:%f;%f;%f",threshold,recHeightThreshold,recWidthThreshold));
             }
             frameCount+=1;
-            Mat fgMask=new Mat();
             backgroundSubtractorMOG.apply(camImage, fgMask,0.1);
-
-            Mat output=new Mat();
-            camImage.copyTo(output,fgMask);
 
             //                Photo.fastNlMeansDenoising(fgMask,denoise,1.0f,7,21);
 
@@ -159,11 +156,16 @@ public class Utils {
         return (countHIntersect>=1 && countVIntersect>=1);
     }
 
-    public static List<MatOfPoint> filterContours(List<MatOfPoint> contours,int tresH, int tresW){
+    public static List<MatOfPoint> filterContours(List<MatOfPoint> contours,int tresH, int tresW, int height, int width){
+        for(int i=contours.size()-1;i>=0;i--){
+            Rect rect = Imgproc.boundingRect(contours.get(i));
+            if(rect.x+rect.width>width || rect.y+rect.height>height)
+                contours.remove(i);
+        }
         Collections.sort(contours, Comparator.comparingInt(o-> (int)Imgproc.contourArea(o)));
         Collections.reverse(contours);
-        contours = contours.subList(0,4);
-        for(int i=3;i>=0;i--){
+        contours = contours.subList(0,Math.min(contours.size(),4));
+        for(int i=contours.size()-1;i>=0;i--){
             Rect rect = Imgproc.boundingRect(contours.get(i));
             if(rect.height<tresH||rect.width<tresW)
                 contours.remove(i);
@@ -191,8 +193,13 @@ public class Utils {
             if(tpb == null)
                 continue;
             for(PixelLine pl:tpb.pixelLines){
-                Mat m = (pl.isHorizontal)?mask.row(pl.location):mask.col(pl.location);
-                m.setTo(new Scalar(255,255,255));
+                try{
+                    Mat m = (pl.isHorizontal)?mask.row(pl.location):mask.col(pl.location);
+                    m.setTo(new Scalar(255,255,255));
+                } catch (CvException e){
+                    logger.debug(pl);
+                }
+
             }
             List<Mat> images = new ArrayList<>();
             Core.split(frame1,images);
@@ -211,12 +218,51 @@ public class Utils {
         logger.debug("done corr");
         logger.debug(result);
         CorrelationDisplay chart = new CorrelationDisplay(
-                "School Vs Years", result );
+                "Correlation vs Frame", result );
 
         chart.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         chart.pack( );
         RefineryUtilities.centerFrameOnScreen( chart );
         chart.setVisible( true );
+        List<Integer> outliers = getOutliers(result);
+        logger.debug("outlier="+outliers);
         return result;
+    }
+
+    public static List<Integer> getOutliers(List<Double> input) {
+        double fenceThreshold = 1.5;
+        List<Double> copy = new ArrayList<>(input);
+        Collections.sort(copy);
+        List<Integer> output = new ArrayList<>();
+        List<Double> data1;
+        List<Double> data2;
+        double q2 = getMedian(copy);
+        if (copy.size() % 2 == 0) {
+            data1 = copy.subList(0, copy.size() / 2);
+            data2 = copy.subList(copy.size() / 2, copy.size());
+        } else {
+            data1 = copy.subList(0, copy.size() / 2);
+            data2 = copy.subList(copy.size() / 2 + 1, copy.size());
+        }
+        double q1 = getMedian(data1);
+        double q3 = getMedian(data2);
+        double iqr = q3 - q1;
+        double lowerFence = q1 - fenceThreshold * iqr;
+        double upperFence = q3 + fenceThreshold * iqr;
+        logger.debug(String.format("lower = %f\tupper = %f",lowerFence,upperFence));
+        for (int i = 0; i < copy.size(); i++) {
+            if (copy.get(i) < lowerFence || copy.get(i) > upperFence){
+                output.add(input.indexOf(copy.get(i)));
+            }
+        }
+        Collections.sort(output);
+        return output;
+    }
+
+    private static double getMedian(List<Double> data) {
+        if (data.size() % 2 == 0)
+            return (data.get(data.size() / 2) + data.get(data.size() / 2 - 1)) / 2;
+        else
+            return data.get(data.size() / 2);
     }
 }

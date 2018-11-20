@@ -6,8 +6,6 @@ import com.nugsky.tugasakhir.models.TemporalPixelBelt;
 import com.nugsky.tugasakhir.models.TemporalPixelBeltGroup;
 import com.nugsky.tugasakhir.utils.Utils;
 import javafx.application.Platform;
-import javafx.beans.value.ChangeListener;
-import javafx.beans.value.ObservableValue;
 import javafx.event.ActionEvent;
 import javafx.scene.control.Button;
 import javafx.scene.control.Slider;
@@ -23,7 +21,6 @@ import org.opencv.videoio.Videoio;
 
 import java.io.File;
 import java.util.*;
-import java.util.stream.Collector;
 import java.util.stream.Collectors;
 
 public class MainController {
@@ -35,7 +32,7 @@ public class MainController {
     final static Logger logger = Logger.getLogger(MainController.class);
 
     public static VideoCapture sourceCapture;
-    public static VideoCapture maskCapture;
+    public static VideoCapture beltCapture;
 
     private static List<TemporalPixelBeltGroup> temporalPixelBeltGroupList = new ArrayList<>();
     private static List<ForegroundObject> foregroundObjects = new ArrayList<>();
@@ -119,7 +116,12 @@ public class MainController {
                     frameNo++;
                     continue;
                 }
-                contours = Utils.filterContours(contours,maskFg.height()/thresH,maskFg.width()/thresW);
+                contours = Utils.filterContours(contours,maskFg.height()/thresH,maskFg.width()/thresW,maskFg.height(),maskFg.width());
+
+                for (MatOfPoint contour:contours){
+                    foregroundObjects.add(new ForegroundObject(frameNo,Imgproc.boundingRect(contour)));
+                }
+
                 int beltCount = 0,i=0;
 
 //                if (frameNo==30){
@@ -152,6 +154,9 @@ public class MainController {
                         i++;
                     }
                     Rect rect = Imgproc.boundingRect(contours.get(--i));
+                    if(rect.height+rect.y>frame.height()){
+                        logger.error("out of frame "+rect.height+","+rect.y);
+                    }
                     PixelLine line = new PixelLine(true,rand.nextInt(rect.height)+rect.y);
                     pixelBelt.addLines(line);
                     if(++i>=contours.size()) i=0;
@@ -170,6 +175,9 @@ public class MainController {
                         i++;
                     }
                     Rect rect = Imgproc.boundingRect(contours.get(--i));
+                    if(rect.width+rect.x>frame.width()){
+                        logger.error("out of frame "+rect.width+","+rect.x);
+                    }
                     PixelLine line = new PixelLine(false,rand.nextInt(rect.width)+rect.x);
                     pixelBelt.addLines(line);
                     if(++i>=contours.size()) i=0;
@@ -197,7 +205,7 @@ public class MainController {
             Imgproc.cvtColor(mask,mask,Imgproc.COLOR_RGB2GRAY);
             List<MatOfPoint> contours = new ArrayList<>();
             Imgproc.findContours(mask,contours,new Mat(),Imgproc.RETR_LIST,Imgproc.CHAIN_APPROX_SIMPLE);
-            contours = Utils.filterContours(contours,mask.height()/thresH,maskFg.width()/thresW);
+            contours = Utils.filterContours(contours,mask.height()/thresH,maskFg.width()/thresW,maskFg.height(),maskFg.width());
 
             TemporalPixelBelt tpb = null;
 
@@ -240,12 +248,12 @@ public class MainController {
         public void run() {
             Utils.backgroundSubtractor(capture);
             logger.debug("done subtract");
-            maskCapture = new VideoCapture(Utils.MASK_FILE);
+            beltCapture = new VideoCapture(fileName);
             sourceCapture.set(Videoio.CAP_PROP_POS_FRAMES,0);
             Mat src = new Mat();
             Mat mask = new Mat();
             sourceCapture.read(src);
-            maskCapture.read(mask);
+            beltCapture.read(mask);
             videoThumbnail.setImage(Utils.mat2Image(src));
             pixelBeltViewer.setImage(Utils.mat2Image(mask));
             prosesBtn.setDisable(false);
@@ -258,9 +266,21 @@ public class MainController {
                 int frameNo = (int) frameNoSlider.getValue();
                 frameNoTextField.setText(""+frameNo);
                 sourceCapture.set(Videoio.CAP_PROP_POS_FRAMES,frameNo);
-                maskCapture.set(Videoio.CAP_PROP_POS_FRAMES,frameNo);
+                beltCapture.set(Videoio.CAP_PROP_POS_FRAMES,frameNo);
                 sourceCapture.read(src);
-                maskCapture.read(mask);
+                beltCapture.read(mask);
+                if(!temporalPixelBeltMap.isEmpty()){
+                    int i=frameNo;
+                    while(!temporalPixelBeltMap.containsKey(i)) --i;
+                    TemporalPixelBelt tpb = temporalPixelBeltMap.get(i);
+                    for(PixelLine pl:tpb.pixelLines){
+                        if(pl.isHorizontal){
+                            Imgproc.line(mask,new Point(0,pl.location),new Point(mask.width(),pl.location),new Scalar(255,255,255));
+                        } else {
+                            Imgproc.line(mask,new Point(pl.location,0),new Point(pl.location,mask.height()),new Scalar(255,255,255));
+                        }
+                    }
+                }
                 videoThumbnail.setImage(Utils.mat2Image(src));
                 pixelBeltViewer.setImage(Utils.mat2Image(mask));
             });

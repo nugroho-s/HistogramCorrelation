@@ -23,7 +23,7 @@ public class CorrelationDisplay extends ApplicationFrame {
         this.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
         JFreeChart lineChart = ChartFactory.createLineChart(
                 title,
-                "Years","Number of Schools",
+                "Frame","Correlation",
                 createDataset(data),
                 PlotOrientation.VERTICAL,
                 true,true,false);
