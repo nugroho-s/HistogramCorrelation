@@ -8,10 +8,13 @@ import com.nugsky.tugasakhir.utils.Utils;
 import javafx.application.Platform;
 import javafx.event.ActionEvent;
 import javafx.scene.control.Button;
+import javafx.scene.control.Label;
 import javafx.scene.control.Slider;
 import javafx.scene.control.TextField;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.MouseEvent;
+import javafx.scene.paint.Color;
+import javafx.scene.text.Font;
 import javafx.stage.FileChooser;
 import org.apache.log4j.Logger;
 import org.opencv.core.*;
@@ -36,9 +39,10 @@ public class MainController {
 
     private static List<TemporalPixelBeltGroup> temporalPixelBeltGroupList = new ArrayList<>();
     private static List<ForegroundObject> foregroundObjects = new ArrayList<>();
-    private static String fileName = "";
+    public static String fileName = "";
     private static Map<Integer, TemporalPixelBelt> temporalPixelBeltMap = new HashMap<>();
     private static List<TemporalPixelBelt> temporalPixelBelts = new ArrayList<>();
+    public Label resultLabel;
     private int thresW=50,thresH=50;
 
     public ImageView videoThumbnail;
@@ -70,7 +74,7 @@ public class MainController {
         logger.debug("proses");
         temporalPixelBeltMap.clear();
         VideoCapture videoCap = new VideoCapture(fileName);
-        VideoCapture maskCap = new VideoCapture("data/temp.mp4");
+        VideoCapture maskCap = new VideoCapture(Utils.MASK_FILE);
         Platform.runLater(() -> {
             Thread t = new Thread(new DefinePixelBelts(videoCap,maskCap));
             logger.debug("applying pixel belts");
@@ -111,12 +115,13 @@ public class MainController {
                 Imgproc.cvtColor(frameFg,maskFg,Imgproc.COLOR_RGB2GRAY);
                 List<MatOfPoint> contours = new ArrayList<>();
                 Imgproc.findContours(maskFg,contours,new Mat(),Imgproc.RETR_LIST,Imgproc.CHAIN_APPROX_SIMPLE);
+
+                contours = Utils.filterContours(contours,maskFg.height()/thresH,maskFg.width()/thresW,maskFg.height(),maskFg.width());
                 if(contours.isEmpty()) {
                     logger.debug("Empty "+frameNo);
                     frameNo++;
                     continue;
                 }
-                contours = Utils.filterContours(contours,maskFg.height()/thresH,maskFg.width()/thresW,maskFg.height(),maskFg.width());
 
                 for (MatOfPoint contour:contours){
                     foregroundObjects.add(new ForegroundObject(frameNo,Imgproc.boundingRect(contour)));
@@ -141,8 +146,11 @@ public class MainController {
                 int totArea=0;
                 List<Integer> areaList = contours.stream().map(s->(int)Imgproc.contourArea(s)).collect(Collectors.toList());
                 for(MatOfPoint contour:contours){
+                    double area = Imgproc.contourArea(contour);
+                    logger.debug(area);
                     totArea+=Imgproc.contourArea(contour);
                 }
+                logger.debug(totArea);
                 pixelBelt = new TemporalPixelBelt();
                 //horizontal pixel belts
                 while (beltCount<4){
@@ -183,13 +191,6 @@ public class MainController {
                     if(++i>=contours.size()) i=0;
                     beltCount++;
                 }
-//                if (frameNo==30){
-//                    for(PixelLine line:pixelBelt.pixelLines){
-//                        if(line.isHorizontal)Imgproc.line(frame,new Point(0,line.location),new Point(maskFg.width(),line.location),new Scalar(255,255,255));
-//                        else Imgproc.line(frame,new Point(line.location,0),new Point(line.location,maskFg.height()),new Scalar(255,255,255));
-//                    }
-//                    Utils.displayImage(frame);
-//                }
                 pixelBelt.frameStart = (temporalPixelBeltMap.isEmpty())?0:frameNo;
                 temporalPixelBeltMap.put(pixelBelt.frameStart,pixelBelt);
                 frameNo++;
@@ -233,12 +234,18 @@ public class MainController {
             pixelBeltViewer.setImage(Utils.mat2Image(mask));
             VideoCapture cap4frame = new VideoCapture(fileName);
             cap4frame.set(Videoio.CAP_PROP_POS_FRAMES,4);
-            Utils.calculateCorrelation(temporalPixelBeltMap, new VideoCapture(fileName),cap4frame);
+            List<Integer> frames = Utils.calculateCorrelation(temporalPixelBeltMap, new VideoCapture(fileName),cap4frame);
+            resultLabel.setFont(new Font("Arial", 30));
+            resultLabel.setTextFill(Color.web(frames.isEmpty()?"#00FF00":"#FF0000"));
+            resultLabel.setText(frames.isEmpty()?"video asli":"video tampering terdeteksi pada "+frames);
         }
     }
 
     class UpdateImageRunnable implements Runnable{
         VideoCapture capture;
+        Mat src = new Mat();
+        Mat beltMat = new Mat();
+        Mat mask = new Mat();
 
         public UpdateImageRunnable(VideoCapture capture) {
             this.capture = capture;
@@ -248,42 +255,58 @@ public class MainController {
         public void run() {
             Utils.backgroundSubtractor(capture);
             logger.debug("done subtract");
-            beltCapture = new VideoCapture(fileName);
+            beltCapture = new VideoCapture(Utils.MASK_FILE);
             sourceCapture.set(Videoio.CAP_PROP_POS_FRAMES,0);
-            Mat src = new Mat();
-            Mat mask = new Mat();
             sourceCapture.read(src);
-            beltCapture.read(mask);
+            src.copyTo(beltMat);
             videoThumbnail.setImage(Utils.mat2Image(src));
-            pixelBeltViewer.setImage(Utils.mat2Image(mask));
+            pixelBeltViewer.setImage(Utils.mat2Image(beltMat));
             prosesBtn.setDisable(false);
             logger.debug(sourceCapture.get(Videoio.CAP_PROP_FRAME_COUNT));
             frameNoSlider.setMax(sourceCapture.get(Videoio.CAP_PROP_FRAME_COUNT));
             frameNoSlider.setShowTickMarks(true);
             frameNoSlider.setBlockIncrement(10);
             frameNoSlider.setDisable(false);
+            frameNoTextField.setDisable(false);
             frameNoSlider.setOnMouseReleased((MouseEvent event) -> {
                 int frameNo = (int) frameNoSlider.getValue();
                 frameNoTextField.setText(""+frameNo);
-                sourceCapture.set(Videoio.CAP_PROP_POS_FRAMES,frameNo);
-                beltCapture.set(Videoio.CAP_PROP_POS_FRAMES,frameNo);
-                sourceCapture.read(src);
-                beltCapture.read(mask);
-                if(!temporalPixelBeltMap.isEmpty()){
-                    int i=frameNo;
-                    while(!temporalPixelBeltMap.containsKey(i)) --i;
-                    TemporalPixelBelt tpb = temporalPixelBeltMap.get(i);
-                    for(PixelLine pl:tpb.pixelLines){
-                        if(pl.isHorizontal){
-                            Imgproc.line(mask,new Point(0,pl.location),new Point(mask.width(),pl.location),new Scalar(255,255,255));
-                        } else {
-                            Imgproc.line(mask,new Point(pl.location,0),new Point(pl.location,mask.height()),new Scalar(255,255,255));
-                        }
+                setFrame(frameNo);
+            });
+            frameNoTextField.setOnAction((event -> {
+                setFrame(Integer.parseInt(frameNoTextField.getText()));
+            }));
+        }
+
+        private void setFrame(int frameNo){
+            sourceCapture.set(Videoio.CAP_PROP_POS_FRAMES,frameNo);
+            beltCapture.set(Videoio.CAP_PROP_POS_FRAMES,frameNo);
+            sourceCapture.read(src);
+            src.copyTo(beltMat);
+            beltCapture.read(mask);
+            List<MatOfPoint> contours = new ArrayList<>();
+            Imgproc.cvtColor(mask,mask,Imgproc.COLOR_RGB2GRAY);
+            Imgproc.findContours(mask,contours,new Mat(),Imgproc.RETR_LIST,Imgproc.CHAIN_APPROX_SIMPLE);
+            contours = Utils.filterContours(contours,mask.height()/thresH,mask.width()/thresW,mask.height(),mask.width());
+            for(MatOfPoint contour:contours){
+                Rect rect = Imgproc.boundingRect(contour);
+                Imgproc.rectangle(beltMat,new Point(rect.x,rect.y),new Point(rect.x+rect.width,rect.y+rect.height),
+                        new Scalar(255,0,0),3);
+            }
+            if(!temporalPixelBeltMap.isEmpty()){
+                int i=frameNo;
+                while(!temporalPixelBeltMap.containsKey(i)) --i;
+                TemporalPixelBelt tpb = temporalPixelBeltMap.get(i);
+                for(PixelLine pl:tpb.pixelLines){
+                    if(pl.isHorizontal){
+                        Imgproc.line(beltMat,new Point(0,pl.location),new Point(beltMat.width(),pl.location),new Scalar(255,255,255));
+                    } else {
+                        Imgproc.line(beltMat,new Point(pl.location,0),new Point(pl.location,beltMat.height()),new Scalar(255,255,255));
                     }
                 }
-                videoThumbnail.setImage(Utils.mat2Image(src));
-                pixelBeltViewer.setImage(Utils.mat2Image(mask));
-            });
+            }
+            videoThumbnail.setImage(Utils.mat2Image(src));
+            pixelBeltViewer.setImage(Utils.mat2Image(beltMat));
         }
     }
 }

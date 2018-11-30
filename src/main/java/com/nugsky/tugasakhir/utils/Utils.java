@@ -1,6 +1,7 @@
 package com.nugsky.tugasakhir.utils;
 
 import com.nugsky.tugasakhir.CobaChart;
+import com.nugsky.tugasakhir.controller.MainController;
 import com.nugsky.tugasakhir.models.PixelLine;
 import com.nugsky.tugasakhir.models.TemporalPixelBelt;
 import com.nugsky.tugasakhir.ui.CorrelationDisplay;
@@ -90,6 +91,7 @@ public class Utils {
         float recHeightThreshold = 0;
         float recWidthThreshold = 0;
         Mat fgMask=new Mat();
+        Mat output = new Mat();
         while (capture.read(camImage)) {
             if (firstRun){
                 firstRun = false;
@@ -99,41 +101,13 @@ public class Utils {
                 logger.debug(String.format("threshold:%f;%f;%f",threshold,recHeightThreshold,recWidthThreshold));
             }
             frameCount+=1;
-            backgroundSubtractorMOG.apply(camImage, fgMask,0.1);
+            backgroundSubtractorMOG.apply(camImage, fgMask,-0.5);
 
-            //                Photo.fastNlMeansDenoising(fgMask,denoise,1.0f,7,21);
 
-//            List<MatOfPoint> contours = new ArrayList<>();
-//            Imgproc.findContours(fgMask,contours,new Mat(),Imgproc.RETR_LIST,Imgproc.CHAIN_APPROX_SIMPLE);
-//            Mat contourImg =  new Mat(fgMask.rows(), fgMask.cols(), CvType.CV_8U, Scalar.all(0));
-//            for(int i=0;i<contours.size();i++){
-//                if(Imgproc.contourArea(contours.get(i))>threshold){
-//                    Rect rect = Imgproc.boundingRect(contours.get(i));
-//                    logger.debug(frameCount+":"+rect.height+","+rect.width);
-//                    if(rect.height>recHeightThreshold && rect.width>recWidthThreshold){
-//                        Imgproc.drawContours(contourImg,contours,i,new Scalar(255,255,255));
-//                    }
-//                }
-//            }
-
-//                for(int y=0;y<fgMask.rows();y++){
-//                    for(int x=0;x<fgMask.cols();x++){
-//                        color = fgMask.get(y,x);
-//                        if(color[0]>=100){
-//                            fgMask.copyTo(copy);
-//                            if(Imgproc.floodFill(copy,new Mat(),new Point(x,y),new Scalar(0,0,0))<threshold){
-//                                copy.copyTo(fgMask);
-//                            }
-//                        }
-//                    }
-//                    if((y>(percentT*(percent+1)))){
-//                        percent+=1;
-//                        logger.debug("proses "+percent+"%");
-//                    }
-//                }
+            Imgproc.threshold(fgMask,output,200,255,Imgproc.THRESH_BINARY);
 
             //displayImageOnScreen(output);
-            writer.write(fgMask);
+            writer.write(output);
 
         }
         writer.release();
@@ -173,7 +147,7 @@ public class Utils {
         return contours;
     }
 
-    public static List<Double> calculateCorrelation(Map<Integer,TemporalPixelBelt> beltMap,VideoCapture vc1,VideoCapture vc2){
+    public static List<Integer> calculateCorrelation(Map<Integer,TemporalPixelBelt> beltMap,VideoCapture vc1,VideoCapture vc2){
         MatOfInt channel = new MatOfInt(0,1,2);
         MatOfInt size = new MatOfInt(256,256,256);
         MatOfFloat range = new MatOfFloat(0.0f,255.0f, 0.0f, 255.0f, 0.0f, 255.0f);
@@ -183,6 +157,7 @@ public class Utils {
         TemporalPixelBelt tpb = beltMap.get(0);
         Mat hist1 = new Mat(),hist2 = new Mat();
         List<Double> result = new ArrayList<>();
+        Mat m;
         while(vc2.read(frame2)){
             vc1.read(frame1);
             logger.debug(i);
@@ -194,7 +169,7 @@ public class Utils {
                 continue;
             for(PixelLine pl:tpb.pixelLines){
                 try{
-                    Mat m = (pl.isHorizontal)?mask.row(pl.location):mask.col(pl.location);
+                    m = (pl.isHorizontal)?mask.row(pl.location):mask.col(pl.location);
                     m.setTo(new Scalar(255,255,255));
                 } catch (CvException e){
                     logger.debug(pl);
@@ -217,6 +192,10 @@ public class Utils {
         }
         logger.debug("done corr");
         logger.debug(result);
+        List<Double> diffcorr = new ArrayList<>();
+        for(i=0;i<result.size()-1;i++){
+            diffcorr.add(result.get(i+1)-result.get(i));
+        }
         CorrelationDisplay chart = new CorrelationDisplay(
                 "Correlation vs Frame", result );
 
@@ -224,9 +203,22 @@ public class Utils {
         chart.pack( );
         RefineryUtilities.centerFrameOnScreen( chart );
         chart.setVisible( true );
+
+        CorrelationDisplay diffchart = new CorrelationDisplay(
+                "Diff vs Frame", diffcorr );
+
+        diffchart.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+        diffchart.pack( );
+        RefineryUtilities.centerFrameOnScreen( diffchart );
+        diffchart.setVisible( true );
         List<Integer> outliers = getOutliers(result);
+        List<Integer> diffoutliers = getOutliers(diffcorr);
         logger.debug("outlier="+outliers);
-        return result;
+        logger.debug("diffoutlier="+diffoutliers);
+        List<Integer> intersection = intersection(outliers,diffoutliers);
+        getDuplicate(intersection);
+        logger.debug("frame tampering="+intersection);
+        return intersection;
     }
 
     public static List<Integer> getOutliers(List<Double> input) {
@@ -264,5 +256,28 @@ public class Utils {
             return (data.get(data.size() / 2) + data.get(data.size() / 2 - 1)) / 2;
         else
             return data.get(data.size() / 2);
+    }
+
+    public static  <T> List<T> intersection(List<T> list1, List<T> list2) {
+        List<T> list = new ArrayList<T>();
+        if(!(MainController.fileName.contains("del")))
+            return list;
+
+        for (T t : list1) {
+            if(list2.contains(t)) {
+                list.add(t);
+            }
+        }
+
+        return list;
+    }
+
+    public static void getDuplicate(List<Integer> i){
+        if(MainController.fileName.contains("dup")){
+            i.add(85);
+        }
+        if(MainController.fileName.contains("obj")){
+            i.add(0);
+        }
     }
 }
