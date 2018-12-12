@@ -14,7 +14,7 @@
       <HBox layoutY="10.0" layoutX="10" spacing="2">
          <TextField fx:id="fileTextField" layoutX="15.0" layoutY="50.0" prefWidth="250.0"/>
          <Button layoutX="265.0" layoutY="50.0" mnemonicParsing="false" onAction="#chooseFile" text="Pilih File" />
-         <Button fx:id="prosesBtn" layoutX="265.0" layoutY="90.0" mnemonicParsing="false" text="Proses" disable="true" onAction="#proses"/>
+         <Button fx:id="prosesBtn" layoutX="265.0" layoutY="90.0" mnemonicParsing="false" text="Periksa" disable="true" onAction="#proses"/>
       </HBox>
       <VBox layoutY="60.0" layoutX="10" spacing="10">
          <HBox spacing="10">
